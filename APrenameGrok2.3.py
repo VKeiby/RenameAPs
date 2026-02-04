@@ -27,7 +27,7 @@ def sendShComm(
         now = datetime.now()
 
     USER = "admin"
-    PASS = "bsquared2019!@#"
+    PASS = ""
     report = f"REP.AP_{now:%y%m%d}.txt"
     output = ""
     cl = None
