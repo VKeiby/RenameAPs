@@ -7,7 +7,7 @@ import paramiko
 
 def sendShComm(ip, commands, now, shSleep=0.8, longSleep=4.0, maxRead=32768):
     USER = "admin"
-    PASS = "bsquared2019!@#"
+    PASS = ""
     report = f"REP.AP_{now:%y%m%d}.txt"
 
     output = ""
