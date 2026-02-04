@@ -20,7 +20,7 @@ def sendShComm(
     now=datetime.datetime.now(),
 ):
     USER = "admin"
-    PASS = "bsquared2019!@#"
+    PASS = ""
     # report = "REP.AP_%.2i%.2i%i" % (now.year, now.month, now.day)
     report = f"REP.AP_{now:%y%m%d}"
     ff = open(report, "a")
