@@ -82,6 +82,11 @@ def sendShComm(
     if now is None:
         now = datetime.now()
 
+<<<<<<< HEAD:ScanRenameAP002.py
+=======
+    USER = "admin"
+    PASS = ""
+>>>>>>> da077c1babf8649d1dc8c3bd119958152b62aa98:APrenameGrok2.3.py
     report = f"REP.AP_{now:%y%m%d}.txt"
     output = ""
     cl = None
