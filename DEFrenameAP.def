@@ -12,7 +12,7 @@ def sendShComm(
     при необходимости меняет имя устройства и применяет конфигурацию.
     """
     USER = "admin"
-    PASS = "bsquared2019!@#"
+    PASS = ""
     report = f"REP.AP_{datetime.datetime.now():%y%m%d}.txt"
 
     output = ""
