@@ -16,7 +16,7 @@ def sendShComm(ip, commands, now, shSleep=0.8, longSleep=4.0, maxRead=32768):
     Авторизация внутри shell (логин + пароль вручную).
     """
     USER = "admin"
-    PASS = "bsquared2019!@#"  # ← В продакшене спрячь в .env или os.getenv()
+    PASS = ""  # ← В продакшене спрячь в .env или os.getenv()
     report = f"REP.AP_{now:%y%m%d}.txt"
 
     output = ""
