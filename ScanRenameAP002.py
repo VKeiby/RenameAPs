@@ -1,12 +1,66 @@
 #!/usr/bin/env python3
 import csv
 import datetime
+import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pprint import pprint
 
 import paramiko
+from dotenv import load_dotenv
+
+load_dotenv()  # ищет .env в текущей папке
+
+USER = os.getenv("DEVICE_USERNAME", "admin")
+PASS = os.getenv("DEVICE_PASSWORD")
+
+if not PASS:
+    print("Ошибка: переменная DEVICE_PASSWORD не найдена в .env")
+    exit(1)
+
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "5"))
+DEFAULT_PREFIX = os.getenv("DEFAULT_SITE_PREFIX")
+
+
+def process_single_ip(ip, read_commands, now, REAL_CHANGE):
+    """
+    Обрабатывает один IP: чтение → парсинг → переименование (если нужно)
+    Возвращает: (parsed_dict или None, ошибка или None)
+    """
+    try:
+        # 1. Читаем данные
+        full_output = sendShComm(
+            ip, read_commands, now=now, new_name=None, dry_run=True
+        )
+
+        if not full_output:
+            return None, f"Нет соединения или пустой вывод"
+
+        # 2. Парсим
+        parsed = parse_and_rename_ap_data(full_output, ip)
+
+        if not parsed or not parsed["port"]:
+            return None, "Порт или имя не найдены"
+
+        new_name = parsed["new_device_name"]
+        print(f"[{ip}] → {new_name} ({parsed['status']})")
+
+        # 3. Если имя уже правильное — не трогаем
+        if parsed["status"].startswith("Уже OK"):
+            parsed["status"] += " (пропущено)"
+            return parsed, None
+
+        # 4. Переименование (или dry-run)
+        sendShComm(ip, [], now=now, new_name=new_name, dry_run=not REAL_CHANGE)
+
+        parsed["status"] += " (изменено)" if REAL_CHANGE else " (dry-run)"
+        return parsed, None
+
+    except Exception as e:
+        return None, str(e)
+
 
 # ────────────────────────────────────────────────
 # Основная функция подключения и выполнения команд
@@ -15,6 +69,8 @@ import paramiko
 
 def sendShComm(
     ip,
+    USER,
+    PASS,
     commands,
     now=None,
     new_name=None,
@@ -26,8 +82,6 @@ def sendShComm(
     if now is None:
         now = datetime.now()
 
-    USER = "admin"
-    PASS = "bsquared2019!@#"
     report = f"REP.AP_{now:%y%m%d}.txt"
     output = ""
     cl = None
@@ -145,7 +199,7 @@ def sendShComm(
 
 
 # ────────────────────────────────────────────────
-# Парсер данных AP
+# Парсер данных AP с фильтрацией/обновлением порта
 # ────────────────────────────────────────────────
 
 
@@ -176,17 +230,37 @@ def parse_and_rename_ap_data(output: str, ip: str) -> dict:
             data["model"] = line.split(":", 1)[1].strip()
         elif "Serial#:" in line:
             data["serial"] = line.split(":", 1)[1].strip()
-        elif "base" in line.lower() and ":" in line:
-            m = re.search(r"base\s*[^:]*:\s*([^,]+)", line, re.I)
-            if m:
-                data["base_mac"] = m.group(1).strip()
 
-    if data["original_device_name"] and data["port"]:
-        data["new_device_name"] = f"{data['original_device_name']}_SP{data['port']}"
-        data["status"] = "Готов к переименованию"
+        # ─── Исправленный поиск base MAC ───
+        if "base" in line.lower() or re.search(r"[0-9A-Fa-f:]{17}", line):
+            # Ищем именно MAC-адрес после "base" или в любой строке
+            mac_match = re.search(r"([0-9A-Fa-f:]{17})", line)
+            if mac_match:
+                data["base_mac"] = mac_match.group(1)
+                # Можно break, если уверен, что первый MAC — нужный
+                # break
+
+    # Логика имени (как было + твоя фильтрация)
+    original_name = data["original_device_name"]
+    real_port = data["port"]
+
+    if original_name and real_port:
+        match_existing = re.search(r"_SP(\d{1,2})$", original_name)
+        if match_existing:
+            existing_port = match_existing.group(1)
+            if existing_port == real_port:
+                data["new_device_name"] = original_name
+                data["status"] = "Уже OK (порт совпадает)"
+            else:
+                base_name = re.sub(r"_SP\d{1,2}$", "", original_name).rstrip("_")
+                data["new_device_name"] = f"{base_name}_SP{real_port}"
+                data["status"] = "Обновление порта (было несовпадение)"
+        else:
+            data["new_device_name"] = f"{original_name}_SP{real_port}"
+            data["status"] = "Добавление порта"
     else:
-        data["new_device_name"] = data["original_device_name"] or "UNKNOWN"
-        data["status"] = "Порт/имя не найдены"
+        data["new_device_name"] = original_name or "UNKNOWN"
+        data["status"] = "Порт или имя не найдены"
 
     return data
 
@@ -233,9 +307,9 @@ ECC-AlQuoz vl.11--	8       Sawaeed vl.11	--  29          Tecom.LV1  vl.14 -  58
 ECC-EO vl.11    --	9       Sawaeed vl.12	--  30          Tecom.LV5 vl.11  -- 60
 ECC-EO vl.12    --	10      Sawaeed vl.13	--  31          Tecom.LV5 vl.12  -- 61
 EMPTY           --	12      Sawaeed vl.14	--  32          JAFZA-WEST vl.15 -  63
-Office          --  13      JAFZA-WEST vl.11 -  36          JAFZA-WEST vl.16 -  64
-Ejadah.PJA      --  15      ECC_SHJ2   vl.11 -  37          EMPTY            -- 65
-Dubai Amblnc    --  16      Tecom.LV1A vl.11 -  39          EMPTY            -- 66
+Office          --	13      JAFZA-WEST vl.11 -  36          JAFZA-WEST vl.16 -  64
+Ejadah.PJA      --	15      ECC_SHJ2   vl.11 -  37          EMPTY            -- 65
+Dubai Amblnc    --	16      Tecom.LV1A vl.11 -  39          EMPTY            -- 66
 Ajman vl.11	    --	17      Tecom.LV1A vl.12 -  43          EMPTY            -- 67
 RAK vl.11	    --	18      WideAdams  vl.11 -  46          Tecom.LV5 vl.13  -- 68
 Sharjah vl.11   --	19      ECC-CAMP22 vl.11 -  47          Tecom.LV5 vl.14  -- 69
@@ -246,16 +320,15 @@ MGPI vl.14	    --	24      WideAdams  vl.12 -  52          Dry_Docks vl.14	 -- 78
 
 
 
-
 Input site prefix: """
 
     try:
         ipPref = input(sitePrefix).strip()
-        ipPref = int(ipPref)  # проверяем, что ввели число
+        ipPref = int(ipPref)  # проверка на число
         net = "172.16."
-        ipAdd = net + str(ipPref)
-    except:
-        print("Ошибка: введите число (например 16, 31 и т.д.)")
+        ipAdd = net + str(ipPref) + "."
+    except ValueError:
+        print("Ошибка: введите целое число (например 17)")
         exit(1)
 
     REAL_CHANGE = False  # ← Поменяй на True только после всех тестов!
@@ -263,37 +336,36 @@ Input site prefix: """
     results = []
     errors = []
 
-    print(f"\n=== Сканирование пула {ipAdd}.2 – {ipAdd}.254 ===")
+    print(f"\n=== Сканирование пула {ipAdd}2 – {ipAdd}254 ===")
     print(f"Режим: {'РЕАЛЬНОЕ ПЕРЕИМЕНОВАНИЕ' if REAL_CHANGE else 'DRY-RUN'}")
     print(f"Дата: {now:%Y-%m-%d %H:%M}\n")
 
-    for octet in range(254, 1, -1):  # от 254 до 2
-        ip = f"{ipAdd}.{octet}"
-        print(f"→ {ip}")
+    # Генерируем список IP
+    ip_list = [f"{ipAdd}{octet}" for octet in range(254, 250, -1)]
 
-        full_output = sendShComm(
-            ip, read_commands, now=now, new_name=None, dry_run=True
-        )
+    # Запускаем пул потоков
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # Отправляем задачи
+        future_to_ip = {
+            executor.submit(process_single_ip, ip, read_commands, now, REAL_CHANGE): ip
+            for ip in ip_list
+        }
 
-        if not full_output:
-            errors.append((ip, "Нет соединения или пустой вывод"))
-            continue
+        # Собираем результаты по мере завершения
+        for future in as_completed(future_to_ip):
+            ip = future_to_ip[future]
+            try:
+                parsed, error = future.result()
+                if parsed:
+                    results.append(parsed)
+                if error:
+                    errors.append((ip, error))
+                    print(f"[{ip}] Ошибка: {error}")
+            except Exception as e:
+                errors.append((ip, str(e)))
+                print(f"[{ip}] Критическая ошибка: {e}")
 
-        parsed = parse_and_rename_ap_data(full_output, ip)
-
-        if not parsed["port"]:
-            errors.append((ip, "Порт не найден"))
-            continue
-
-        new_name = parsed["new_device_name"]
-        print(f"   → Предлагаемое имя: {new_name}")
-
-        # Выполняем переименование (или dry-run)
-        sendShComm(ip, [], now=now, new_name=new_name, dry_run=not REAL_CHANGE)
-
-        parsed["status"] = "Изменено" if REAL_CHANGE else "DRY-RUN OK"
-        results.append(parsed)
-
+    # Сохраняем отчёт
     save_to_csv(results)
 
     if errors:
@@ -301,4 +373,4 @@ Input site prefix: """
         for ip, msg in errors:
             print(f"  {ip}: {msg}")
 
-    print("\nГотово.")
+    print(f"\nГотово. Обработано {len(results)} устройств, ошибок: {len(errors)}")
