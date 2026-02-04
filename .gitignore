@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+ap_rename_report.csv
+REP.AP_*.txt
+# Device credentials
+.env
