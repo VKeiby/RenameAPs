@@ -355,7 +355,9 @@ Input site prefix: """
     # Запускаем пул потоков
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_ip = {
-            executor.submit(process_single_ip, ip, read_commands, now, REAL_CHANGE): ip
+            executor.submit(
+                process_single_ip, ip, read_commands, now, REAL_CHANGE, USER, PASS
+            ): ip
             for ip in ip_list
         }
 

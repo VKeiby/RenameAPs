@@ -1,3 +1,11 @@
+import csv
+import re
+import time
+from datetime import datetime
+
+import paramiko
+
+
 # ────────────────────────────────────────────────
 # Основная функция подключения и выполнения команд
 # ────────────────────────────────────────────────
@@ -10,6 +18,8 @@ def sendShComm(
     shSleep=0.8,
     longSleep=4.0,
     maxRead=32768,
+    username=None,
+    password=None,
 ):
     if now is None:
         now = datetime.now()
@@ -23,8 +33,8 @@ def sendShComm(
         cl.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         cl.connect(
             ip,
-            username=USER,
-            password=PASS,
+            username=username,
+            password=password,
             timeout=10,
             allow_agent=False,
             look_for_keys=False,
@@ -45,9 +55,9 @@ def sendShComm(
                 if "Please login:" in initial:
                     break
 
-            ssh.send(f"{USER}\n")
+            ssh.send(f"{username}\n")
             time.sleep(shSleep)
-            ssh.send(f"{PASS}\n")
+            ssh.send(f"{password}\n")
             time.sleep(shSleep * 1.5)
 
             auth_resp = ""
@@ -206,7 +216,7 @@ def parse_and_rename_ap_data(output: str, ip: str) -> dict:
 # ────────────────────────────────────────────────
 # Сохранение отчёта
 # ────────────────────────────────────────────────
-def save_to_csv(results: list[dict], filename="ap_rename_report.csv"):
+def save_to_csv(results: list[dict], filename="range_report.csv"):
     if not results:
         print("Нет данных для сохранения")
         return
@@ -230,10 +240,16 @@ def save_to_csv(results: list[dict], filename="ap_rename_report.csv"):
 # ────────────────────────────────────────────────
 # Функция для обработки одного IP (для потоков)
 # ────────────────────────────────────────────────
-def process_single_ip(ip, read_commands, now, REAL_CHANGE):
+def process_single_ip(ip, read_commands, now, REAL_CHANGE, username, password):
     try:
         full_output = sendShComm(
-            ip, read_commands, now=now, new_name=None, dry_run=True
+            ip,
+            read_commands,
+            now=now,
+            new_name=None,
+            dry_run=True,
+            username=username,
+            password=password,
         )
 
         if not full_output:
@@ -251,7 +267,15 @@ def process_single_ip(ip, read_commands, now, REAL_CHANGE):
             parsed["status"] += " (пропущено)"
             return parsed, None
 
-        sendShComm(ip, [], now=now, new_name=new_name, dry_run=not REAL_CHANGE)
+        sendShComm(
+            ip,
+            [],
+            now=now,
+            new_name=new_name,
+            dry_run=not REAL_CHANGE,
+            username=username,
+            password=password,
+        )
 
         parsed["status"] += " (изменено)" if REAL_CHANGE else " (dry-run)"
         return parsed, None

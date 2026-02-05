@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
-import csv
 import os
-import re
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from pprint import pprint
 
-import paramiko
 from dotenv import load_dotenv
 
-from ap_utils import (
-    parse_and_rename_ap_data,
-    process_single_ip,
-    save_to_csv,
-    sendShComm,
-)
+from ap_utils import process_single_ip, save_to_csv
 
 # Загружаем .env
 load_dotenv()
@@ -92,7 +82,9 @@ Input site prefix: """
     # Запускаем пул потоков
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_ip = {
-            executor.submit(process_single_ip, ip, read_commands, now, REAL_CHANGE): ip
+            executor.submit(
+                process_single_ip, ip, read_commands, now, REAL_CHANGE, USER, PASS
+            ): ip
             for ip in ip_list
         }
 
